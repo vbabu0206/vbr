@@ -1,0 +1,43 @@
+- hosts: all
+  become: yes
+  tasks:
+  - name: install java
+    yum:
+      name: java-1.8.0-openjdk
+      state: present
+  - name: dowload jenkins into yum repo
+    get_url: 
+      url: https://pkg.jenkins.io/redhat-stable/jenkins.repo
+      dest: /etc/yum.repos.d/jenkins.repo 
+  - name: import rpm key
+    rpm_key:
+      key: https://pkg.jenkins.io/redhat-stable/jenkins.io.key
+      state: present
+  - name: install jenkins 
+    yum:
+      name: jenkins
+      state: present
+      update_cache: yes
+  - name: enable service
+    systemd:
+      name: jenkins
+      enabled: yes
+  - name: start the srvice
+    service:
+      name: jenkins
+      state: started
+  - name: sleep playbook for 30 seconds
+    wait_for:
+      delay: 30
+      port: 8080
+  - name: store intial password
+    shell: cat /var/lib/jenkins/secrets/initialAdminPassword
+    register: result
+  - name: display password
+    debug:
+      var : result.stdout
+  
+    
+   
+  
+

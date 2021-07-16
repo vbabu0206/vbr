@@ -1,0 +1,10 @@
+- hosts: all
+  become: yes
+  tasks:
+  - name: create users
+    user:
+      name: "{{item.user}}"
+      password: "{{item.password}}"
+    with_items:
+    - { user: nagarjuna, password: "nagarjuna45"}
+    - { user: bannu, password: "bannu45"}
