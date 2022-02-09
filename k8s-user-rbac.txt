@@ -1,0 +1,116 @@
+#Create a user on the master machine then go into its home directory to perform the remaining steps.
+useradd jean && cd /home/jean
+
+#Create a private key:
+openssl genrsa -out jean.key 2048
+
+#Create a certificate signing request (CSR). CN is the username and O the group. We can set permissions by group, which can simplify management if we have, for example, multiple users with the same authorizations.
+
+Without Group
+openssl req -new -key jean.key \
+  -out jean.csr \
+  -subj "/CN=jean"
+
+# With a Group where $group is the group name
+openssl req -new -key jean.key \
+  -out jean.csr \
+  -subj "/CN=jean/O=$group"
+
+#If the user has multiple groups
+openssl req -new -key jean.key \
+  -out jean.csr \
+  -subj "/CN=jean/O=$group1/O=$group2/O=$group3"
+  
+# Sign the CSR with the Kubernetes CA. We have to use the CA cert and key which are normally in /etc/kubernetes/pki/. Our certificate will be valid for 500 days.
+
+openssl x509 -req -in jean.csr \
+  -CA /etc/kubernetes/pki/ca.crt \
+  -CAkey /etc/kubernetes/pki/ca.key \
+  -CAcreateserial \
+  -out jean.crt -days 500
+  
+#Create a “.certs” directory where we are going to store the user public and private key.
+
+mkdir .certs && mv jean.crt jean.key .certs
+
+#Create the user inside Kubernetes.
+
+kubectl config set-credentials jean \
+  --client-certificate=/home/jean/.certs/jean.crt \
+  --client-key=/home/jean/.certs/jean.key
+  
+#Create a context for the user.
+
+kubectl config set-context jean-context \
+  --cluster=kubernetes --user=jean
+  
+#Edit the user config file. The config file has the information needed for the authentication to the cluster. You can use the cluster admin config which is normally in /etc/kubernetes. The “certificate-authority-data” and “server” variables have to be as in the cluster admin config.
+
+apiVersion: v1
+clusters:
+- cluster:
+   certificate-authority-data: {Parse content here}
+   server: {Parse content here}
+  name: kubernetes
+contexts:
+- context:
+   cluster: kubernetes
+   user: jean
+  name: jean-context
+current-context: jean-context
+kind: Config
+preferences: {}
+users:
+- name: jean
+  user:
+   client-certificate: /home/jean/.certs/jean.cert
+   client-key: /home/jean/.certs/jean.key
+   
+#Then we need to copy the config above in the .kube directory.
+
+mkdir .kube && vi .kube/config
+
+#
+chown -R jean: /home/jean/
+kubectl create namespace my-project-dev
+
+#Create Role and ClusterRole
+
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: Role
+metadata:
+  name: list-deployments
+  namespace: my-project-dev
+rules:
+  - apiGroups: [ apps ]
+    resources: [ deployments ]
+    verbs: [ get, list ]
+---------------------------------
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: list-deployments
+rules:
+  - apiGroups: [ apps ]
+    resources: [ deployments ]
+    verbs: [ get, list ]
+	
+#role binding
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jean
+  namespace: my-project-dev
+subjects:
+- kind: User
+  name: jean
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: edit
+  apiGroup: rbac.authorization.k8s.io
+  
+#check permissions
+
+kubectl auth can-i create deployments -n dev
